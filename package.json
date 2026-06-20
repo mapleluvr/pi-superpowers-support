@@ -1,26 +1,29 @@
 {
-  "name": "@uadgj/pi-superpowers-support",
-  "version": "0.1.5",
-  "description": "Pi extension providing TodoWrite, Task, and Skill tools for official superpowers compatibility",
+  "name": "@mapleluvr/pi-superpowers-support",
+  "version": "0.2.0",
+  "description": "Pi compatibility tools for Superpowers on top of nicobailon pi-subagents",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "superpowers"
+    "superpowers",
+    "pi-subagents",
+    "compatibility"
   ],
   "license": "MIT",
-  "author": "gadgj",
+  "author": "mapleluvr",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gadgj/pi-superpowers-support.git"
+    "url": "git+https://github.com/mapleluvr/pi-superpowers-support.git"
   },
   "bugs": {
-    "url": "https://github.com/gadgj/pi-superpowers-support/issues"
+    "url": "https://github.com/mapleluvr/pi-superpowers-support/issues"
   },
-  "homepage": "https://github.com/gadgj/pi-superpowers-support#readme",
+  "homepage": "https://github.com/mapleluvr/pi-superpowers-support#readme",
   "type": "module",
   "main": "./src/index.ts",
   "files": [
     "src/",
+    "tests/",
     "README.md"
   ],
   "pi": {
@@ -29,12 +32,21 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.79.8",
+    "@earendil-works/pi-coding-agent": "^0.79.8",
+    "@earendil-works/pi-tui": "^0.79.8",
+    "@types/node": "^24.0.0",
+    "typebox": "^1.1.24",
     "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "test": "node tests/task-mapping.test.mjs",
+    "typecheck": "tsc --noEmit"
   }
 }

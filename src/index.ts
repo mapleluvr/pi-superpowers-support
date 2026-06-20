@@ -1,11 +1,11 @@
 /**
  * pi-superpowers-support — A pi extension providing TodoWrite, Task, and Skill tools
- * for official superpowers (obra/superpowers) compatibility.
+ * for official superpowers (obra/superpowers) compatibility on Pi.
  *
  * Tools:
  *   TodoWrite  — Task tracking with status (pending, in_progress, completed)
- *   Task       — Subagent dispatch (alias for Agent tool if pi-subagents is installed)
- *   Skill      — Load skill content by name (superpowers requires this, not read tool)
+ *   Task       — Compatibility shim that maps legacy Superpowers dispatches to pi-subagents' subagent tool
+ *   Skill      — Load skill content by name (for harnesses/workflows that expect a Skill tool)
  *
  * Commands:
  *   /todos     — Show current todos
@@ -15,9 +15,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
-import { Type, type Static } from "@sinclair/typebox";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
+import { Type, type Static } from "typebox";
+import { describeUnsupportedTaskFields, formatSubagentInvocation, mapTaskToSubagent } from "./task-mapping.js";
 
 // ============================================================================
 // Types
@@ -116,55 +117,82 @@ function registerTodoWriteTool(pi: ExtensionAPI) {
 // ============================================================================
 
 const TaskSchema = Type.Object({
-  subagent_type: Type.String({ description: "Type of subagent to dispatch (e.g., 'general-purpose', 'Explore', 'Plan')" }),
+  subagent_type: Type.String({ description: "Legacy Superpowers/Claude Code subagent type (e.g., 'general-purpose', 'Explore', 'Plan', 'reviewer')" }),
   prompt: Type.String({ description: "The task prompt for the subagent" }),
   description: Type.String({ description: "Short 3-5 word summary of the task" }),
-  model: Type.Optional(Type.String({ description: "Model to use (provider/modelId or fuzzy name)" })),
-  thinking: Type.Optional(Type.String({ description: "Thinking level: off, minimal, low, medium, high, xhigh" })),
-  max_turns: Type.Optional(Type.Number({ description: "Maximum agentic turns" })),
-  run_in_background: Type.Optional(Type.Boolean({ description: "Run without blocking" })),
-  resume: Type.Optional(Type.String({ description: "Agent ID to resume a previous session" })),
-  isolated: Type.Optional(Type.Boolean({ description: "No extension/MCP tools" })),
-  inherit_context: Type.Optional(Type.Boolean({ description: "Fork parent conversation into agent" })),
+  model: Type.Optional(Type.String({ description: "Model to pass through to pi-subagents (provider/modelId)" })),
+  thinking: Type.Optional(Type.String({ description: "Legacy field; pi-subagents agents own their thinking config" })),
+  max_turns: Type.Optional(Type.Number({ description: "Legacy field; use pi-subagents agent config for turn limits" })),
+  run_in_background: Type.Optional(Type.Boolean({ description: "Map to subagent async: true" })),
+  resume: Type.Optional(Type.String({ description: "Legacy field; use subagent action='resume' directly for existing runs" })),
+  isolated: Type.Optional(Type.Boolean({ description: "Map to subagent context: 'fresh' unless inherit_context is set" })),
+  inherit_context: Type.Optional(Type.Boolean({ description: "Map to subagent context: 'fork'" })),
 });
 
 type TaskInput = Static<typeof TaskSchema>;
 
+interface TaskToolDetails {
+  missingTool?: "subagent";
+  mappedTo?: "subagent";
+  subagent?: ReturnType<typeof mapTaskToSubagent>;
+  unsupportedFields?: string[];
+}
+
 function registerTaskTool(pi: ExtensionAPI) {
-  pi.registerTool({
+  pi.registerTool<typeof TaskSchema, TaskToolDetails>({
     name: "Task",
     label: "Task",
-    description: "Dispatch a subagent to handle a specific task. Alias for Agent tool from pi-subagents. Requires @tintinweb/pi-subagents.",
-    promptSnippet: "Dispatch specialized subagent for isolated task execution",
+    description: "Compatibility shim for Superpowers-style subagent dispatch. Requires nicobailon pi-subagents and maps legacy Task arguments to subagent({ agent, task, ... }).",
+    promptSnippet: "Map legacy Superpowers Task dispatches to pi-subagents subagent calls",
     promptGuidelines: [
-      "Use Task when you need to delegate work to a specialized agent with isolated context.",
-      "Task tool requires @tintinweb/pi-subagents extension to be installed.",
+      "Prefer calling subagent directly for real delegation when the subagent tool is available.",
+      "Use Task only for legacy Superpowers prompts that explicitly ask for a Task-style dispatch.",
+      "Task maps subagent_type values to pi-subagents agents: Explore→scout, Plan→planner, review/reviewer→reviewer, research→researcher, general-purpose→delegate.",
+      "Task requires the nicobailon pi-subagents package to be installed separately with: pi install npm:pi-subagents.",
     ],
     parameters: TaskSchema,
     async execute(_toolCallId, params: TaskInput) {
-      // Check if Agent tool is available (from pi-subagents)
-      const activeTools = pi.getActiveTools();
-      const hasAgentTool = activeTools.includes("Agent");
+      const hasSubagentTool = pi.getActiveTools().includes("subagent");
 
-      if (!hasAgentTool) {
+      if (!hasSubagentTool) {
         return {
           content: [{
             type: "text",
-            text: "Error: Task tool requires @tintinweb/pi-subagents extension.\n\nInstall with: pi install npm:@tintinweb/pi-subagents\n\nAlternatively, use executing-plans skill for inline execution.",
+            text: [
+              "Error: Task requires the nicobailon pi-subagents companion package.",
+              "",
+              "Install it first:",
+              "  pi install npm:pi-subagents",
+              "",
+              "This compatibility plugin does not bundle or reimplement subagent execution.",
+              "If subagents are not available, use the executing-plans skill for inline execution.",
+            ].join("\n"),
           }],
           isError: true,
-          details: {},
+          details: { missingTool: "subagent" },
         };
       }
 
-      // Agent tool exists - inform user to use Agent directly
-      // Task is an alias for Agent, and the Agent tool will handle the actual execution
+      const mapped = mapTaskToSubagent(params);
+      const invocation = formatSubagentInvocation(mapped);
+      const unsupported = describeUnsupportedTaskFields(params);
+      const notes = unsupported.length > 0
+        ? `\n\nNote: ${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} legacy Task field${unsupported.length === 1 ? "" : "s"} and cannot be forwarded by this compatibility shim. Use native subagent options/actions for that behavior.`
+        : "";
+
       return {
         content: [{
           type: "text",
-          text: `Task tool is an alias for the Agent tool. Please use the Agent tool directly with the same parameters:\n\nAgent({\n  subagent_type: "${params.subagent_type}",\n  prompt: "${params.prompt}",\n  description: "${params.description}"\n  ...\n})`,
+          text: [
+            "Task compatibility mapping for pi-subagents:",
+            "",
+            invocation,
+            "",
+            "Pi extensions cannot safely invoke another custom tool through a public API, so call the subagent tool above to execute the task.",
+            notes.trimStart(),
+          ].filter(Boolean).join("\n"),
         }],
-        details: {},
+        details: { mappedTo: "subagent", subagent: mapped, unsupportedFields: unsupported },
       };
     },
   });
