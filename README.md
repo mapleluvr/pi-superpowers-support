@@ -2,13 +2,12 @@
 
 A Pi compatibility extension for the official [Superpowers](https://github.com/obra/superpowers) skillset.
 
-This package provides small harness-compatibility tools that Superpowers workflows often reference:
+This package provides only the small harness-compatibility tools that are still useful on Pi:
 
 - `TodoWrite` — in-session task tracking for skills that say "create a todo".
 - `Skill` — explicit skill loading for prompts that expect a `Skill` tool.
-- `Task` — a legacy dispatch shim that maps Claude Code / older Superpowers `Task(...)` calls to the nicobailon `pi-subagents` `subagent(...)` style.
 
-It does **not** bundle, fork, or reimplement subagent execution. Install `pi-subagents` separately and let it own real subagent workflows.
+It does **not** provide `Task`, `Agent`, or any subagent execution wrapper. Install nicobailon's `pi-subagents` separately and use its native `subagent(...)` tool for real delegation.
 
 ## Required Companion Packages
 
@@ -33,9 +32,9 @@ Pi already discovers skills natively and the latest Superpowers Pi mapping says:
 - use Pi's `read`, `bash`, `edit`, and `write` tools for file/shell work;
 - use an installed todo/task extension when a skill asks for task tracking;
 - use `pi-subagents`' `subagent` tool when a skill asks to dispatch subagents;
-- if no subagent tool exists, do not fabricate `Task` or `Agent` calls.
+- if no subagent tool exists, do not fabricate unsupported tool calls.
 
-This extension fills the small compatibility gap for prompts and older Superpowers wording that still mention `TodoWrite`, `Skill`, or `Task` directly.
+This extension fills the small compatibility gap for prompts and older Superpowers wording that still mention `TodoWrite` or `Skill` directly.
 
 ## Tool Mapping
 
@@ -47,64 +46,23 @@ This extension fills the small compatibility gap for prompts and older Superpowe
 | Create/update todos | `TodoWrite` | Yes |
 | Load a skill explicitly | `Skill({ skill })` | Yes |
 | Dispatch a subagent | `subagent({ agent, task, ... })` from `npm:pi-subagents` | No |
-| Legacy `Task(...)` dispatch | Compatibility mapping to `subagent(...)` | Yes |
 
-## `Task` Compatibility Mapping
+## Subagents
 
-`Task` is intentionally a shim. Pi's public extension API exposes tool names and schemas, but not a stable way for one custom tool to execute another custom tool. Therefore `Task(...)` validates that `subagent` is installed and returns the exact `subagent(...)` invocation to use.
+Subagent support belongs to `npm:pi-subagents`, not this package.
 
-Prefer direct `subagent(...)` calls in new prompts and plans.
-
-Legacy examples:
+Use nicobailon's native tool directly:
 
 ```js
-Task({
-  subagent_type: "Explore",
-  prompt: "Find all auth-related files",
-  description: "Find auth files",
-  run_in_background: true
-})
+subagent({ agent: "scout", task: "Find all auth-related files" })
+subagent({ agent: "planner", task: "Create an implementation plan", context: "fork" })
+subagent({ tasks: [
+  { agent: "reviewer", task: "Review the diff" },
+  { agent: "researcher", task: "Research the API behavior" }
+] })
 ```
 
-Maps to:
-
-```js
-subagent({
-  agent: "scout",
-  task: "Find all auth-related files",
-  async: true
-})
-```
-
-Common mappings:
-
-| Legacy `subagent_type` | nicobailon `agent` |
-| --- | --- |
-| `Explore` / `scout` | `scout` |
-| `Plan` / `planner` | `planner` |
-| `review` / `reviewer` | `reviewer` |
-| `research` / `researcher` | `researcher` |
-| `general-purpose` / `generalist` / `task` | `delegate` |
-| `worker` | `worker` |
-| `oracle` | `oracle` |
-| `context-builder` | `context-builder` |
-
-Other names pass through unchanged, so user-defined `pi-subagents` agents can still be targeted.
-
-Legacy fields handled by the shim:
-
-- `run_in_background: true` → `async: true`
-- `inherit_context: true` → `context: "fork"`
-- `isolated: true` → `context: "fresh"` when `inherit_context` is not set
-- `model` → `model`
-
-Legacy fields not forwarded by the shim:
-
-- `thinking`
-- `max_turns`
-- `resume`
-
-Use native `subagent` configuration/actions for those behaviors.
+This package intentionally avoids a `Task` compatibility tool because the latest official Superpowers Pi mapping is capability-based: Pi should use the installed `subagent` tool when available and should not fabricate unavailable harness tools.
 
 ## Tools Provided
 
@@ -127,19 +85,6 @@ Skill({ skill: "brainstorming" })
 Skill({ skill: "test-driven-development" })
 ```
 
-### `Task`
-
-```js
-Task({
-  subagent_type: "Plan",
-  prompt: "Create an implementation plan for the approved design",
-  description: "Plan implementation",
-  inherit_context: true
-})
-```
-
-Then call the returned `subagent(...)` invocation.
-
 ## Commands
 
 | Command | Description |
@@ -149,14 +94,14 @@ Then call the returned `subagent(...)` invocation.
 
 ## Alignment With Latest Superpowers
 
-As of the checked upstream Superpowers skillset, `skills/using-superpowers/references/pi-tools.md` treats `pi-subagents` as an optional Pi companion and explicitly says not to fabricate unsupported `Task` calls when no subagent tool is installed.
+As of the checked upstream Superpowers skillset, `skills/using-superpowers/references/pi-tools.md` treats `pi-subagents` as an optional Pi companion and explicitly says not to fabricate unsupported subagent calls when no subagent tool is installed.
 
 This package aligns with that model:
 
 - it requires users to install `npm:pi-subagents` separately for real delegation;
-- it removes the old `Agent` dependency assumption;
+- it removes the old subagent dependency assumption;
 - it nudges new work toward direct `subagent(...)` calls;
-- it keeps `Task` only as a legacy compatibility bridge.
+- it keeps this package focused on `TodoWrite` and `Skill` compatibility only.
 
 ## License
 

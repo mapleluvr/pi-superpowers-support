@@ -1,7 +1,7 @@
 {
   "name": "@mapleluvr/pi-superpowers-support",
-  "version": "0.2.0",
-  "description": "Pi compatibility tools for Superpowers on top of nicobailon pi-subagents",
+  "version": "0.3.0",
+  "description": "Pi TodoWrite and Skill compatibility tools for Superpowers alongside nicobailon pi-subagents",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -23,7 +23,6 @@
   "main": "./src/index.ts",
   "files": [
     "src/",
-    "tests/",
     "README.md"
   ],
   "pi": {
@@ -46,7 +45,7 @@
     "typescript": "^6.0.3"
   },
   "scripts": {
-    "test": "node tests/task-mapping.test.mjs",
+    "test": "node tests/no-task-tool.test.mjs",
     "typecheck": "tsc --noEmit"
   }
 }
