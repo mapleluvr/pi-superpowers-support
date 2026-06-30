@@ -37,6 +37,12 @@ interface SkillMeta {
   path: string;
 }
 
+interface PiSettings {
+  packages?: unknown;
+  extensions?: unknown;
+  skills?: unknown;
+}
+
 // ============================================================================
 // TodoWrite Tool
 // ============================================================================
@@ -146,6 +152,8 @@ function discoverSkills(cwd: string): Map<string, SkillMeta> {
     findNpmPackageSkillDirs(npmNodeModulesDir, skillPaths);
   }
 
+  findSettingsLocalPackageSkillDirs(cwd, skillPaths);
+
   for (const basePath of skillPaths) {
     if (!existsSync(basePath)) continue;
     try {
@@ -232,6 +240,77 @@ function findScopedNpmPackageSkillDirs(scopePath: string, results: string[]): vo
 }
 
 function addNpmPackageSkillDirs(packagePath: string, results: string[]): void {
+  addPackageManifestSkillDirs(packagePath, results, "npm package");
+}
+
+function findSettingsLocalPackageSkillDirs(cwd: string, results: string[]): void {
+  const home = homedir();
+  const settingsFiles = [
+    { path: join(home, ".pi", "agent", "settings.json"), baseDir: join(home, ".pi", "agent") },
+    { path: join(cwd, ".pi", "settings.json"), baseDir: join(cwd, ".pi") },
+  ];
+
+  for (const settingsFile of settingsFiles) {
+    const settings = readPiSettings(settingsFile.path);
+    if (!settings) continue;
+
+    for (const source of getSettingsPackageSources(settings)) {
+      if (!isLocalPackageSource(source)) continue;
+      const packagePath = resolve(settingsFile.baseDir, source);
+      addPackageManifestSkillDirs(packagePath, results, "local package");
+    }
+  }
+}
+
+function readPiSettings(settingsPath: string): PiSettings | null {
+  if (!existsSync(settingsPath)) return null;
+
+  try {
+    return JSON.parse(readFileSync(settingsPath, "utf-8")) as PiSettings;
+  } catch (error) {
+    console.error(`[pi-superpowers-support] Failed to read settings from ${settingsPath}:`, error);
+    return null;
+  }
+}
+
+function getSettingsPackageSources(settings: PiSettings): string[] {
+  const sources: string[] = [];
+
+  for (const entry of getSettingsArrayEntries(settings.packages)) {
+    const source = getPackageSource(entry);
+    if (source) sources.push(source);
+  }
+
+  for (const entry of getSettingsArrayEntries(settings.extensions)) {
+    if (typeof entry === "string") sources.push(entry);
+  }
+
+  for (const entry of getSettingsArrayEntries(settings.skills)) {
+    if (typeof entry === "string") sources.push(entry);
+  }
+
+  return sources;
+}
+
+function getSettingsArrayEntries(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getPackageSource(entry: unknown): string | null {
+  if (typeof entry === "string") return entry;
+  if (!entry || typeof entry !== "object") return null;
+
+  const source = (entry as { source?: unknown }).source;
+  return typeof source === "string" ? source : null;
+}
+
+function isLocalPackageSource(source: string): boolean {
+  const trimmed = source.trim();
+  if (!trimmed) return false;
+  return !/^(?:npm|git|github|https?|ssh):/i.test(trimmed);
+}
+
+function addPackageManifestSkillDirs(packagePath: string, results: string[], sourceType: string): void {
   const packageJsonPath = join(packagePath, "package.json");
   if (!existsSync(packageJsonPath)) return;
 
@@ -248,7 +327,7 @@ function addNpmPackageSkillDirs(packagePath: string, results: string[]): void {
       }
     }
   } catch (error) {
-    console.error(`[pi-superpowers-support] Failed to read npm package skills from ${packageJsonPath}:`, error);
+    console.error(`[pi-superpowers-support] Failed to read ${sourceType} skills from ${packageJsonPath}:`, error);
   }
 }
 

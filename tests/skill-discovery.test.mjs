@@ -22,6 +22,11 @@ function writePackageJson(packageDir, skillPaths) {
   );
 }
 
+function writeSettings(settingsPath, settings) {
+  mkdirSync(join(settingsPath, ".."), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+}
+
 async function loadExtension(homeDir) {
   process.env.USERPROFILE = homeDir;
   process.env.HOME = homeDir;
@@ -66,10 +71,37 @@ try {
   writePackageJson(hiddenPackage, []);
   createSkill(join(hiddenPackage, "nested", "skills"), "hidden-recursive-npm-skill");
 
-  const extension = await loadExtension(tempRoot);
-
   const cwd = join(tempRoot, "project");
   mkdirSync(cwd, { recursive: true });
+
+  const globalLocalPackage = join(tempRoot, "global-local-package");
+  mkdirSync(join(globalLocalPackage, "skills"), { recursive: true });
+  writePackageJson(globalLocalPackage, ["./skills"]);
+  createSkill(join(globalLocalPackage, "skills"), "global-settings-local-skill");
+
+  writeSettings(join(tempRoot, ".pi", "agent", "settings.json"), {
+    packages: [globalLocalPackage],
+  });
+
+  const projectLocalPackage = join(tempRoot, "project-local-package");
+  mkdirSync(join(projectLocalPackage, "skills"), { recursive: true });
+  writePackageJson(projectLocalPackage, ["./skills"]);
+  createSkill(join(projectLocalPackage, "skills"), "project-settings-local-skill");
+
+  const ignoredNonLocalPackage = join(tempRoot, "ignored-non-local-package");
+  mkdirSync(join(ignoredNonLocalPackage, "skills"), { recursive: true });
+  writePackageJson(ignoredNonLocalPackage, ["./skills"]);
+  createSkill(join(ignoredNonLocalPackage, "skills"), "ignored-non-local-settings-skill");
+
+  writeSettings(join(cwd, ".pi", "settings.json"), {
+    packages: [
+      { source: projectLocalPackage },
+      "npm:ignored-non-local-package",
+      { source: "https://example.com/ignored-non-local-package.git", skills: [ignoredNonLocalPackage] },
+    ],
+  });
+
+  const extension = await loadExtension(tempRoot);
 
   const unscopedResult = await callSkill(extension, "unscoped-npm-skill", cwd);
   assert.equal(unscopedResult.isError, undefined, "unscoped npm package skill should load");
@@ -81,6 +113,17 @@ try {
 
   const hiddenResult = await callSkill(extension, "hidden-recursive-npm-skill", cwd);
   assert.equal(hiddenResult.isError, true, "npm discovery should only follow package pi.skills paths");
+
+  const globalLocalResult = await callSkill(extension, "global-settings-local-skill", cwd);
+  assert.equal(globalLocalResult.isError, undefined, "global settings local package skill should load");
+  assert.equal(globalLocalResult.details.skillName, "global-settings-local-skill");
+
+  const projectLocalResult = await callSkill(extension, "project-settings-local-skill", cwd);
+  assert.equal(projectLocalResult.isError, undefined, "project settings local package skill should load");
+  assert.equal(projectLocalResult.details.skillName, "project-settings-local-skill");
+
+  const ignoredNonLocalResult = await callSkill(extension, "ignored-non-local-settings-skill", cwd);
+  assert.equal(ignoredNonLocalResult.isError, true, "non-local settings sources should not be scanned as local package paths");
 
   const files = [
     "src/index.ts",
