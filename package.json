@@ -45,7 +45,7 @@
     "typescript": "^6.0.3"
   },
   "scripts": {
-    "test": "node tests/no-task-tool.test.mjs",
+    "test": "node tests/no-task-tool.test.mjs && node tests/skill-discovery.test.mjs",
     "typecheck": "tsc --noEmit"
   }
 }

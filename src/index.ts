@@ -13,7 +13,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
@@ -141,6 +141,11 @@ function discoverSkills(cwd: string): Map<string, SkillMeta> {
     findSkillsDirs(gitPackagesDir, skillPaths);
   }
 
+  const npmNodeModulesDir = join(home, ".pi", "agent", "npm", "node_modules");
+  if (existsSync(npmNodeModulesDir)) {
+    findNpmPackageSkillDirs(npmNodeModulesDir, skillPaths);
+  }
+
   for (const basePath of skillPaths) {
     if (!existsSync(basePath)) continue;
     try {
@@ -193,6 +198,64 @@ function findSkillsDirs(basePath: string, results: string[], depth = 0): void {
       console.error(`[pi-superpowers-support] Error scanning ${basePath}:`, error);
     }
   }
+}
+
+/** Find manifest-declared skill directories in npm packages installed by Pi */
+function findNpmPackageSkillDirs(nodeModulesPath: string, results: string[]): void {
+  try {
+    const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const packagePath = join(nodeModulesPath, entry.name);
+      if (entry.name.startsWith("@")) {
+        findScopedNpmPackageSkillDirs(packagePath, results);
+      } else {
+        addNpmPackageSkillDirs(packagePath, results);
+      }
+    }
+  } catch (error) {
+    console.error(`[pi-superpowers-support] Failed to read npm packages directory ${nodeModulesPath}:`, error);
+  }
+}
+
+function findScopedNpmPackageSkillDirs(scopePath: string, results: string[]): void {
+  try {
+    const packages = readdirSync(scopePath, { withFileTypes: true });
+    for (const packageEntry of packages) {
+      if (!packageEntry.isDirectory()) continue;
+      addNpmPackageSkillDirs(join(scopePath, packageEntry.name), results);
+    }
+  } catch (error) {
+    console.error(`[pi-superpowers-support] Failed to read scoped npm packages directory ${scopePath}:`, error);
+  }
+}
+
+function addNpmPackageSkillDirs(packagePath: string, results: string[]): void {
+  const packageJsonPath = join(packagePath, "package.json");
+  if (!existsSync(packageJsonPath)) return;
+
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { pi?: { skills?: unknown } };
+    const skillPaths = packageJson.pi?.skills;
+    if (!Array.isArray(skillPaths)) return;
+
+    for (const skillPath of skillPaths) {
+      if (typeof skillPath !== "string") continue;
+      const resolvedSkillPath = resolve(packagePath, skillPath);
+      if (isPathInside(packagePath, resolvedSkillPath)) {
+        results.push(resolvedSkillPath);
+      }
+    }
+  } catch (error) {
+    console.error(`[pi-superpowers-support] Failed to read npm package skills from ${packageJsonPath}:`, error);
+  }
+}
+
+function isPathInside(parentPath: string, childPath: string): boolean {
+  const normalizedParent = resolve(parentPath);
+  const normalizedChild = resolve(childPath);
+  return normalizedChild === normalizedParent || normalizedChild.startsWith(`${normalizedParent}\\`) || normalizedChild.startsWith(`${normalizedParent}/`);
 }
 
 function parseSkillFrontmatter(content: string, path: string): SkillMeta | null {
